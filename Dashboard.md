@@ -105,3 +105,21 @@ A user should immediately know:
 - What can be ignored
 
 The goal is to reduce inbox stress and save time.
+
+
+
+Action Center
+The dashboard should not only display emails.
+
+It should display actions.
+
+Examples:
+
+Reply to John
+Approve Lead
+Join Meeting
+Pay Invoice
+Review Contract
+Verify OTP
+
+The goal is for users to know what they should do next without reading every email.
