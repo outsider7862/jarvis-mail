@@ -21,3 +21,6 @@ Core Principles
 Long-Term Goal
 
 Become the default AI inbox assistant for professionals.
+
+
+Jarvis Mail should reduce decision fatigue, not just organize emails
