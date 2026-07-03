@@ -16,6 +16,9 @@ python-dotenv==1.2.2
 composio==0.17.1
 composio-client==1.41.0
 
+# --- Auth ---
+PyJWT==2.10.1
+
 # --- OpenAI (extraction) ---
 openai==2.44.0
 

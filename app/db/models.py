@@ -20,6 +20,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    supabase_user_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     business_name: Mapped[str | None] = mapped_column(String, nullable=True)
     profession: Mapped[str | None] = mapped_column(

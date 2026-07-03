@@ -25,11 +25,16 @@ mentioning it in passing — that's the shared backlog for this project.
 - FastAPI backend, async SQLAlchemy models: `User`, `ConnectedAccount`, `RawEmail`,
   `EmailAnalysis` (the core classification record), `Lead` (extended detail, only
   created when `is_business_lead` is true)
+- **Auth for your own users** — Supabase Auth. The dashboard/Android app logs
+  in against Supabase directly and sends the session JWT as `Authorization:
+  Bearer <token>`; this API verifies it and resolves/creates the local `User` row.
+  All `/api/leads` and `/api/analyses` endpoints now require this — no more
+  trusting a client-supplied `user_id`, and lookups are scoped to the
+  authenticated user's own records (404, not 403, on someone else's data, so
+  existence isn't leaked)
 - Composio integration: connect Gmail/Outlook, create real-time webhook triggers,
   verify webhook signatures
-- Light prefilter — only drops true mail-system noise (bounces, read receipts).
-  Unlike a lead-only product, newsletters/spam still need to reach the LLM here
-  since classifying them correctly is part of the value (morning brief, search).
+- Light prefilter — only drops true mail-system noise (bounces, read receipts)
 - OpenAI classification service using the Responses API + a broadened structured
   schema (`EmailAnalysisExtraction`) covering all 7 categories plus lead detail
 - Webhook pipeline: email arrives -> light filter -> classify -> store analysis
@@ -37,14 +42,15 @@ mentioning it in passing — that's the shared backlog for this project.
   meeting / phishing
 - API: list/search analyses (by category, priority, sender, keyword), update
   status (read/actioned/dismissed), morning brief aggregation, pending
-  notifications feed (pollable now, swap for real push — e.g. FCM for Android —
-  later), leads list + confirm/reject
+  notifications feed, leads list + confirm/reject
+- Test suite (24 tests) covering prefilter, schemas, webhook signature, model
+  relationships, extraction service logic, and JWT verification — all isolated
+  from real API keys/DB. CI runs this on every push/PR.
 
 ## Not built yet
 
 - Web dashboard frontend
 - Android app (backend is ready for it — same JSON API, no rework needed)
-- Auth for your own app's users
 - Deployment config
 - Real push notifications (currently a pollable "pending notifications" endpoint)
 - Background job queue — processing currently runs inline via FastAPI

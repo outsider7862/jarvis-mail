@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import EmailAnalysis, RawEmail
+from app.core.auth import get_current_user
+from app.db.models import EmailAnalysis, RawEmail, User
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
@@ -48,16 +49,27 @@ class MorningBrief(BaseModel):
     estimated_minutes: int
 
 
+async def _get_owned_analysis(analysis_id: uuid.UUID, current_user: User, db: AsyncSession) -> EmailAnalysis:
+    """Shared lookup that 404s (not 403) on someone else's analysis, so we don't leak existence."""
+    result = await db.execute(
+        select(EmailAnalysis).where(EmailAnalysis.id == analysis_id, EmailAnalysis.user_id == current_user.id)
+    )
+    analysis = result.scalar_one_or_none()
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return analysis
+
+
 @router.get("", response_model=list[EmailAnalysisOut])
 async def list_analyses(
-    user_id: uuid.UUID,
     category: str | None = None,
     priority: str | None = None,
     sender: str | None = Query(default=None, description="Filter by sender substring"),
     keyword: str | None = Query(default=None, description="Filter by keyword in summary"),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(EmailAnalysis).where(EmailAnalysis.user_id == user_id)
+    query = select(EmailAnalysis).where(EmailAnalysis.user_id == current_user.id)
 
     if category:
         query = query.where(EmailAnalysis.category == category)
@@ -80,13 +92,10 @@ async def list_analyses(
 async def update_analysis_status(
     analysis_id: uuid.UUID,
     update: AnalysisStatusUpdate,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(EmailAnalysis).where(EmailAnalysis.id == analysis_id))
-    analysis = result.scalar_one_or_none()
-    if analysis is None:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-
+    analysis = await _get_owned_analysis(analysis_id, current_user, db)
     analysis.status = update.status
     await db.commit()
     await db.refresh(analysis)
@@ -94,7 +103,7 @@ async def update_analysis_status(
 
 
 @router.get("/morning-brief", response_model=MorningBrief)
-async def morning_brief(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def morning_brief(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """
     Aggregates today's classified emails into the "Good Morning" summary from the
     spec. "Today" is treated as the last 24 hours in UTC for now — swap for the
@@ -103,7 +112,7 @@ async def morning_brief(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     since = datetime.now(timezone.utc) - timedelta(hours=24)
 
     base = select(func.count()).select_from(EmailAnalysis).where(
-        EmailAnalysis.user_id == user_id, EmailAnalysis.created_at >= since
+        EmailAnalysis.user_id == current_user.id, EmailAnalysis.created_at >= since
     )
 
     async def count(extra_filter) -> int:
@@ -133,7 +142,7 @@ async def morning_brief(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/notifications/pending", response_model=list[EmailAnalysisOut])
-async def pending_notifications(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def pending_notifications(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """
     Returns analyses flagged should_notify=True that haven't been delivered yet.
     Intended to be polled by the web dashboard and, later, the Android app — or
@@ -143,7 +152,7 @@ async def pending_notifications(user_id: uuid.UUID, db: AsyncSession = Depends(g
     query = (
         select(EmailAnalysis)
         .where(
-            EmailAnalysis.user_id == user_id,
+            EmailAnalysis.user_id == current_user.id,
             EmailAnalysis.should_notify.is_(True),
             EmailAnalysis.notified_at.is_(None),
         )
@@ -154,12 +163,12 @@ async def pending_notifications(user_id: uuid.UUID, db: AsyncSession = Depends(g
 
 
 @router.post("/notifications/{analysis_id}/mark-notified", response_model=EmailAnalysisOut)
-async def mark_notified(analysis_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(EmailAnalysis).where(EmailAnalysis.id == analysis_id))
-    analysis = result.scalar_one_or_none()
-    if analysis is None:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-
+async def mark_notified(
+    analysis_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    analysis = await _get_owned_analysis(analysis_id, current_user, db)
     analysis.notified_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(analysis)
