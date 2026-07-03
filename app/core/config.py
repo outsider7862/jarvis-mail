@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     composio_webhook_secret: str
     openai_api_key: str
     openai_extraction_model: str = "gpt-5.5"
-    supabase_jwt_secret: str
+    supabase_url: str  # e.g. https://xxxxx.supabase.co — used to build the JWKS endpoint
     app_env: str = "development"
 
 

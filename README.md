@@ -25,13 +25,14 @@ mentioning it in passing — that's the shared backlog for this project.
 - FastAPI backend, async SQLAlchemy models: `User`, `ConnectedAccount`, `RawEmail`,
   `EmailAnalysis` (the core classification record), `Lead` (extended detail, only
   created when `is_business_lead` is true)
-- **Auth for your own users** — Supabase Auth. The dashboard/Android app logs
-  in against Supabase directly and sends the session JWT as `Authorization:
-  Bearer <token>`; this API verifies it and resolves/creates the local `User` row.
-  All `/api/leads` and `/api/analyses` endpoints now require this — no more
-  trusting a client-supplied `user_id`, and lookups are scoped to the
-  authenticated user's own records (404, not 403, on someone else's data, so
-  existence isn't leaked)
+- **Auth for your own users** — Supabase Auth, verified via JWKS (public-key,
+  not a shared secret — see note below). The dashboard/Android app logs in
+  against Supabase directly and sends the session JWT as `Authorization:
+  Bearer <token>`; this API verifies it against Supabase's public signing key
+  and resolves/creates the local `User` row. All `/api/leads` and
+  `/api/analyses` endpoints now require this — no more trusting a
+  client-supplied `user_id`, and lookups are scoped to the authenticated
+  user's own records (404, not 403, on someone else's data)
 - Composio integration: connect Gmail/Outlook, create real-time webhook triggers,
   verify webhook signatures
 - Light prefilter — only drops true mail-system noise (bounces, read receipts)
@@ -60,11 +61,29 @@ mentioning it in passing — that's the shared backlog for this project.
 
 ### 1. Prerequisites
 - Python 3.11+
-- A Postgres database (Supabase free tier is the fastest way to get one)
+- A Supabase project (see below)
 - A Composio account + API key (composio.dev)
 - An OpenAI API key
 
-### 2. Install (Windows / PowerShell)
+### 2. Create the Supabase project
+
+1. Go to supabase.com -> New Project. Pick a strong database password and a
+   region close to you (Mumbai/`ap-south-1` or Singapore both work well from
+   Pakistan) — save the password somewhere, you'll need it once, right now.
+2. Wait for provisioning (a minute or two).
+3. **Get `DATABASE_URL`**: Project Settings -> Database -> Connection String.
+   Choose the **Session pooler** string, not "Direct connection" — the direct
+   connection requires IPv6, which most hosting platforms don't support by
+   default, while the pooler works over IPv4 and is designed for exactly this
+   (a persistent backend server, not serverless functions). It looks like:
+   `postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres`
+   — copy it into `.env` as `DATABASE_URL`, changing `postgresql://` to
+   `postgresql+asyncpg://` at the start (SQLAlchemy needs the driver named
+   explicitly).
+4. **Get `SUPABASE_URL`**: Project Settings -> API -> Project URL. Just the
+   base URL, e.g. `https://abcdefgh.supabase.co`.
+
+### 3. Install (Windows / PowerShell)
 
 ```powershell
 cd jarvis_mail
@@ -72,7 +91,7 @@ py -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env
-# fill in .env with real DATABASE_URL, COMPOSIO_API_KEY, OPENAI_API_KEY
+# fill in .env with real DATABASE_URL, SUPABASE_URL, COMPOSIO_API_KEY, OPENAI_API_KEY
 py scripts\init_db.py
 uvicorn app.main:app --reload
 ```
@@ -81,7 +100,7 @@ uvicorn app.main:app --reload
 
 Visit http://localhost:8000/docs for interactive API docs.
 
-### 3. Run the tests
+### 4. Run the tests
 
 Everything except `extraction.py` and `composio_client.py` (which call real
 external APIs) is unit-tested in isolation — no database, no real API keys
@@ -94,7 +113,7 @@ pytest -v
 
 CI runs this automatically on every push/PR via `.github/workflows/tests.yml`.
 
-### 4. Connect a Gmail/Outlook account and create a trigger
+### 5. Connect a Gmail/Outlook account and create a trigger
 
 One-time setup per connected inbox — see `app/services/composio_client.py` for
 `start_gmail_connection()` / `start_outlook_connection()` and
@@ -103,6 +122,14 @@ and set that URL as your Composio webhook endpoint.
 
 ## Important notes
 
+- **Auth uses JWKS, not a shared secret.** Supabase projects created since
+  mid-2025 sign session tokens with a private key Supabase never exposes, and
+  publish the matching public key at `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`.
+  We verify against that public key locally (`app/core/auth.py`). This means
+  `SUPABASE_URL` in `.env` is not sensitive — no auth secret lives in this
+  codebase at all. If you ever see a JWT algorithm error, check
+  Project Settings -> JWT Keys in Supabase to confirm the project is on the
+  default ES256 asymmetric key (not the legacy HS256 shared secret).
 - **Real-time vs polling triggers**: use webhook-delivered triggers, not polling —
   Composio now enforces a 15-minute minimum interval on polling triggers, too slow
   for "new lead just landed."
