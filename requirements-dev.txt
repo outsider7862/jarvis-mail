@@ -2,3 +2,7 @@
 
 pytest==8.3.4
 pytest-asyncio==0.25.0
+
+# For scripts/test_auth_flow.py only — the production backend never logs
+# in as a user, it only verifies tokens, so this doesn't belong in requirements.txt
+supabase==2.31.0

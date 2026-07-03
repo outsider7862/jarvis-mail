@@ -17,7 +17,7 @@ composio==0.17.1
 composio-client==1.41.0
 
 # --- Auth ---
-PyJWT[crypto]==2.10.1
+PyJWT[crypto]==2.13.0
 
 # --- OpenAI (extraction) ---
 openai==2.44.0

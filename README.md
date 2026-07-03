@@ -120,6 +120,18 @@ One-time setup per connected inbox — see `app/services/composio_client.py` for
 `create_new_email_trigger()`. For local testing, expose your webhook with ngrok
 and set that URL as your Composio webhook endpoint.
 
+### 6. Verify auth works end to end (recommended before building the dashboard)
+
+```powershell
+pip install -r requirements-dev.txt
+py scripts\test_auth_flow.py
+```
+
+This logs into your real Supabase project, gets a real JWT, and confirms your
+running FastAPI server accepts it. See the docstring at the top of that file —
+you'll need "Confirm email" turned off in Supabase for this quick check to work
+smoothly (Authentication -> Providers -> Email in the dashboard).
+
 ## Important notes
 
 - **Auth uses JWKS, not a shared secret.** Supabase projects created since
