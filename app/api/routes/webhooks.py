@@ -41,12 +41,6 @@ async def composio_webhook(
     db: AsyncSession = Depends(get_db),
 ):
     raw_body = await request.body()
-    # TEMP DEBUG — remove after fixing
-    import json
-    try:
-        print("DEBUG RAW PAYLOAD:", json.dumps(json.loads(raw_body), indent=2))
-    except Exception:
-        print("DEBUG RAW BYTES:", raw_body[:500])
     
     parsed = parse_webhook(raw_body, dict(request.headers))
 

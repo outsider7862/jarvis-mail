@@ -9,7 +9,6 @@ Wraps Composio for:
 from composio import Composio
 from app.core.config import settings
 
-print(f"DEBUG — using COMPOSIO_API_KEY ending: ...{settings.composio_api_key[-6:]}")
 composio = Composio(api_key=settings.composio_api_key)
 
 
