@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_extraction_model: str = "gpt-5.5"
     supabase_url: str  # e.g. https://xxxxx.supabase.co — used to build the JWKS endpoint
+    frontend_url: str = "http://localhost:3000"
     app_env: str = "development"
 
 

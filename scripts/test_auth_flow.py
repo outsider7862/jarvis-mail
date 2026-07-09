@@ -30,8 +30,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 
 load_dotenv()
-
-TEST_EMAIL = "[email protected]"
+TEST_EMAIL = "jarvistest@gmail.com"
 TEST_PASSWORD = "test-password-123!"
 API_BASE_URL = "http://localhost:8000"
 
