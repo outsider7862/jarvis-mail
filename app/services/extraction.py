@@ -41,23 +41,22 @@ support them from the email content. Leave them null rather than guessing."""
 
 
 async def analyze_email(*, subject: str, body_text: str, sender: str) -> EmailAnalysisExtraction:
-    # Cap body length so a huge thread doesn't blow the context window or cost —
-    # the first ~10k characters is almost always enough to classify an email.
-    truncated_body = (body_text or "")[:10_000]
-
-    response = await client.responses.parse(
-        model=settings.openai_extraction_model,
-        input=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"From: {sender}\nSubject: {subject}\n\nBody:\n{truncated_body}",
-            },
-        ],
-        text_format=EmailAnalysisExtraction,
-    )
-
-    return response.output_parsed
+    # Create a fresh client per call — avoids closed connection pool
+    # issues when running inside FastAPI background tasks
+    async with AsyncOpenAI(api_key=settings.openai_api_key) as client:
+        truncated_body = (body_text or "")[:10_000]
+        response = await client.responses.parse(
+            model=settings.openai_extraction_model,
+            input=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"From: {sender}\nSubject: {subject}\n\nBody:\n{truncated_body}",
+                },
+            ],
+            text_format=EmailAnalysisExtraction,
+        )
+        return response.output_parsed
 
 
 def compute_should_notify(analysis: EmailAnalysisExtraction) -> bool:
