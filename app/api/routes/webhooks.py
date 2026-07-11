@@ -43,8 +43,6 @@ async def composio_webhook(
     raw_body = await request.body()
     
     parsed = parse_webhook(raw_body, dict(request.headers))
-
-    parsed = parse_webhook(raw_body, dict(request.headers))
     if parsed is None:
         return {"status": "ignored", "reason": "not a trigger message event"}
 
@@ -102,7 +100,9 @@ async def process_email(raw_email_id: uuid.UUID, user_id: uuid.UUID) -> None:
                 sender=raw_email.sender or "",
             )
         except Exception as exc:  # noqa: BLE001
+            import traceback
             print(f"Classification failed for raw_email {raw_email_id}: {exc}")
+            print(traceback.format_exc())
             return
 
         raw_email.processed = True
