@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/analyses", tags=["analyses"])
 
 class EmailAnalysisOut(BaseModel):
     id: uuid.UUID
+    raw_email_id: uuid.UUID
     category: str
     priority: str
     summary: str
@@ -36,6 +37,15 @@ class EmailAnalysisOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RawEmailOut(BaseModel):
+    sender: str | None
+    subject: str | None
+    body_text: str | None
+    received_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
 class AnalysisStatusUpdate(BaseModel):
     status: Literal["read", "actioned", "dismissed"]
 
@@ -44,13 +54,12 @@ class MorningBrief(BaseModel):
     business_leads: int
     invoices: int
     meetings_today: int
-    follow_ups: int  # unresolved items with an action_required, not yet actioned/dismissed
+    follow_ups: int
     possible_phishing: int
     estimated_minutes: int
 
 
 async def _get_owned_analysis(analysis_id: uuid.UUID, current_user: User, db: AsyncSession) -> EmailAnalysis:
-    """Shared lookup that 404s (not 403) on someone else's analysis, so we don't leak existence."""
     result = await db.execute(
         select(EmailAnalysis).where(EmailAnalysis.id == analysis_id, EmailAnalysis.user_id == current_user.id)
     )
@@ -78,7 +87,6 @@ async def list_analyses(
     if keyword:
         query = query.where(EmailAnalysis.summary.ilike(f"%{keyword}%"))
     if sender:
-        # Sender lives on RawEmail, so join when this filter is used.
         query = query.join(RawEmail, RawEmail.id == EmailAnalysis.raw_email_id).where(
             RawEmail.sender.ilike(f"%{sender}%")
         )
@@ -104,11 +112,6 @@ async def update_analysis_status(
 
 @router.get("/morning-brief", response_model=MorningBrief)
 async def morning_brief(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """
-    Aggregates today's classified emails into the "Good Morning" summary from the
-    spec. "Today" is treated as the last 24 hours in UTC for now — swap for the
-    user's actual timezone once accounts store one.
-    """
     since = datetime.now(timezone.utc) - timedelta(hours=24)
 
     base = select(func.count()).select_from(EmailAnalysis).where(
@@ -127,8 +130,6 @@ async def morning_brief(current_user: User = Depends(get_current_user), db: Asyn
         EmailAnalysis.action_required.is_not(None) & EmailAnalysis.status.in_(["new", "read"])
     )
 
-    # Rough, transparent heuristic — 2 min per follow-up, 3 min per lead, 1 min per
-    # invoice/meeting glance. Tune once you have real usage data instead of guessing further.
     estimated_minutes = follow_ups * 2 + business_leads * 3 + invoices + meetings_today
 
     return MorningBrief(
@@ -143,12 +144,6 @@ async def morning_brief(current_user: User = Depends(get_current_user), db: Asyn
 
 @router.get("/notifications/pending", response_model=list[EmailAnalysisOut])
 async def pending_notifications(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """
-    Returns analyses flagged should_notify=True that haven't been delivered yet.
-    Intended to be polled by the web dashboard and, later, the Android app — or
-    swapped for a push mechanism (e.g. FCM for Android) once that's wired up.
-    Caller is responsible for marking them delivered via the mark-notified endpoint.
-    """
     query = (
         select(EmailAnalysis)
         .where(
@@ -173,3 +168,19 @@ async def mark_notified(
     await db.commit()
     await db.refresh(analysis)
     return analysis
+
+
+@router.get("/{analysis_id}/raw-email", response_model=RawEmailOut)
+async def get_raw_email(
+    analysis_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    analysis = await _get_owned_analysis(analysis_id, current_user, db)
+    result = await db.execute(
+        select(RawEmail).where(RawEmail.id == analysis.raw_email_id)
+    )
+    raw = result.scalar_one_or_none()
+    if raw is None:
+        raise HTTPException(status_code=404, detail="Raw email not found")
+    return raw
