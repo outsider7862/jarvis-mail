@@ -15,6 +15,13 @@ both build the same thing at once.
 
 - [ ] _(example)_ Semantic search over past emails, not just keyword match
 
+- Waiting for Reply
+- Follow-up Reminder
+- Client Timeline
+- Daily AI Brief
+- AI Suggested Tasks
+- OTP Dashboard
+- 
 ## 🔨 In Progress
 
 - [ ] _(move items here and add your name, e.g. "— Akram")_

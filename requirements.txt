@@ -1,10 +1,11 @@
 # --- Web framework ---
 fastapi==0.118.0
 uvicorn[standard]==0.34.0
+gunicorn==23.0.0
 
 # --- Database ---
-sqlalchemy[asyncio]==2.0.36
-asyncpg==0.30.0
+sqlalchemy[asyncio]==2.0.51
+asyncpg==0.31.0
 alembic==1.14.0
 
 # --- Settings / env ---

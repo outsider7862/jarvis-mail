@@ -1,4 +1,3 @@
-import json
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -7,12 +6,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ConnectedAccount, EmailAnalysis, Lead, RawEmail
 from app.db.session import get_db
-from app.services.composio_client import verify_webhook_signature
+from app.services.composio_client import parse_webhook
 from app.services.extraction import analyze_email, compute_should_notify
 from app.services.prefilter import is_system_noise
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
+
+def _extract_gmail_fields(data: dict) -> tuple[str, str, str]:
+    sender = (
+        data.get("sender")
+        or data.get("from_email")
+        or data.get("from")
+        or ""
+    )
+    subject = (
+        data.get("subject")
+        or data.get("email_subject")
+        or ""
+    )
+    body = (
+        data.get("message_text")
+        or data.get("body_plain")
+        or data.get("body")
+        or data.get("snippet")
+        or ""
+    )
+    return sender, subject, body
 
 @router.post("/composio")
 async def composio_webhook(
@@ -21,49 +41,41 @@ async def composio_webhook(
     db: AsyncSession = Depends(get_db),
 ):
     raw_body = await request.body()
+    
+    parsed = parse_webhook(raw_body, dict(request.headers))
+    if parsed is None:
+        return {"status": "ignored", "reason": "not a trigger message event"}
 
-    signature = request.headers.get("webhook-signature", "")
-    webhook_id = request.headers.get("webhook-id", "")
-    timestamp = request.headers.get("webhook-timestamp", "")
+    if parsed["trigger_slug"] != "GMAIL_NEW_GMAIL_MESSAGE":
+        return {"status": "ignored", "reason": f"unhandled trigger: {parsed['trigger_slug']}"}
 
-    if not verify_webhook_signature(
-        signature_header=signature, webhook_id=webhook_id, timestamp=timestamp, raw_body=raw_body
-    ):
-        raise HTTPException(status_code=401, detail="Invalid webhook signature")
-
-    event = json.loads(raw_body)
-    payload = event.get("payload", {})
-    connected_account_composio_id = event.get("connectedAccountId") or payload.get("connectedAccountId")
-
+    composio_account_id = parsed["connected_account_id"]
     result = await db.execute(
         select(ConnectedAccount).where(
-            ConnectedAccount.composio_connected_account_id == connected_account_composio_id
+            ConnectedAccount.composio_connected_account_id == composio_account_id
         )
     )
     connected_account = result.scalar_one_or_none()
     if connected_account is None:
-        # Event for an account we don't recognize — ack anyway so Composio doesn't retry forever,
-        # but don't process it.
         return {"status": "ignored", "reason": "unknown connected account"}
 
-    sender = payload.get("sender") or payload.get("from", "")
-    subject = payload.get("subject", "")
-    body_text = payload.get("message_text") or payload.get("body", "")
+    data = parsed["data"]
+    sender, subject, body = _extract_gmail_fields(data)
 
     raw_email = RawEmail(
         id=uuid.uuid4(),
         connected_account_id=connected_account.id,
-        composio_message_id=payload.get("id"),
+        composio_message_id=data.get("message_id") or data.get("id"),
         sender=sender,
         subject=subject,
-        body_text=body_text,
-        raw_payload=event,
+        body_text=body,
+        raw_payload=data,
     )
     db.add(raw_email)
     await db.commit()
     await db.refresh(raw_email)
 
-    if is_system_noise(sender, subject, body_text):
+    if is_system_noise(sender, subject, body):
         raw_email.was_filtered = True
         await db.commit()
         return {"status": "filtered"}
@@ -73,14 +85,6 @@ async def composio_webhook(
 
 
 async def process_email(raw_email_id: uuid.UUID, user_id: uuid.UUID) -> None:
-    """
-    Runs the LLM classification and stores the result. Executed as a FastAPI
-    background task so the webhook responds to Composio immediately.
-
-    For pilot-scale volume this is fine. Once you have more than a handful of
-    active users, move this to a real queue (Celery/arq) so a slow OpenAI call
-    can't back up webhook processing or get lost if the process restarts mid-request.
-    """
     from app.db.session import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
@@ -95,8 +99,10 @@ async def process_email(raw_email_id: uuid.UUID, user_id: uuid.UUID) -> None:
                 body_text=raw_email.body_text or "",
                 sender=raw_email.sender or "",
             )
-        except Exception as exc:  # noqa: BLE001 — log and move on, don't crash the background task
+        except Exception as exc:  # noqa: BLE001
+            import traceback
             print(f"Classification failed for raw_email {raw_email_id}: {exc}")
+            print(traceback.format_exc())
             return
 
         raw_email.processed = True
@@ -121,7 +127,7 @@ async def process_email(raw_email_id: uuid.UUID, user_id: uuid.UUID) -> None:
             should_notify=compute_should_notify(extraction),
         )
         db.add(analysis)
-        await db.flush()  # get analysis.id before building the Lead FK
+        await db.flush()
 
         if extraction.is_business_lead and extraction.lead_detail:
             lead = Lead(
