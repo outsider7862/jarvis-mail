@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import analyses, leads, webhooks
+from app.api.routes import accounts, analyses, leads, webhooks
 from app.core.config import settings
 
 app = FastAPI(title="Jarvis Mail API")
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(webhooks.router)
 app.include_router(leads.router)
 app.include_router(analyses.router)
+app.include_router(accounts.router)
 
 
 @app.get("/health")

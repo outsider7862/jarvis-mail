@@ -14,13 +14,17 @@ composio = Composio(api_key=settings.composio_api_key)
 
 # ── OAuth connection ──────────────────────────────────────────────────────────
 
-def start_gmail_connection(user_id: str) -> str:
+def start_gmail_connection(user_id: str, redirect_uri: str | None = None) -> str:
     """
     Kicks off the OAuth flow for connecting a user's Gmail account.
     Returns a redirect URL — send the business owner there to grant access.
+
+    redirect_uri is where Google/Composio sends the user back to once they grant
+    access. The installed SDK's session.authorize() calls this kwarg callback_url,
+    not redirect_uri — passed through under that name here.
     """
     session = composio.create(user_id=user_id, toolkits=["gmail"])
-    connection_request = session.authorize("gmail")
+    connection_request = session.authorize("gmail", callback_url=redirect_uri)
     return connection_request.redirect_url
 
 
