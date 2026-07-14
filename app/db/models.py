@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, Boolean, Float, ForeignKey, JSON, DateTime
+from sqlalchemy import String, Text, Boolean, Float, ForeignKey, JSON, DateTime, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -90,6 +90,12 @@ class EmailAnalysis(Base):
     """
 
     __tablename__ = "email_analyses"
+    __table_args__ = (
+        # Every list/filter query is scoped to user_id and ordered by created_at.
+        Index("ix_email_analyses_user_created", "user_id", "created_at"),
+        # Matches the pending-notifications query (user_id + should_notify + notified_at IS NULL).
+        Index("ix_email_analyses_user_notify", "user_id", "should_notify", "notified_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
@@ -132,6 +138,9 @@ class Lead(Base):
     """
 
     __tablename__ = "leads"
+    __table_args__ = (
+        Index("ix_leads_user_created", "user_id", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)

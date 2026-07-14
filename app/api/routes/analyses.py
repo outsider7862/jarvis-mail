@@ -33,6 +33,7 @@ class EmailAnalysisOut(BaseModel):
     status: str
     should_notify: bool
     created_at: datetime
+    received_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -78,7 +79,11 @@ async def list_analyses(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(EmailAnalysis).where(EmailAnalysis.user_id == current_user.id)
+    query = (
+        select(EmailAnalysis, RawEmail.received_at)
+        .join(RawEmail, RawEmail.id == EmailAnalysis.raw_email_id)
+        .where(EmailAnalysis.user_id == current_user.id)
+    )
 
     if category:
         query = query.where(EmailAnalysis.category == category)
@@ -87,13 +92,14 @@ async def list_analyses(
     if keyword:
         query = query.where(EmailAnalysis.summary.ilike(f"%{keyword}%"))
     if sender:
-        query = query.join(RawEmail, RawEmail.id == EmailAnalysis.raw_email_id).where(
-            RawEmail.sender.ilike(f"%{sender}%")
-        )
+        query = query.where(RawEmail.sender.ilike(f"%{sender}%"))
 
     query = query.order_by(EmailAnalysis.created_at.desc())
     result = await db.execute(query)
-    return result.scalars().all()
+    return [
+        EmailAnalysisOut.model_validate(analysis).model_copy(update={"received_at": received_at})
+        for analysis, received_at in result.all()
+    ]
 
 
 @router.patch("/{analysis_id}", response_model=EmailAnalysisOut)
@@ -114,30 +120,26 @@ async def update_analysis_status(
 async def morning_brief(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     since = datetime.now(timezone.utc) - timedelta(hours=24)
 
-    base = select(func.count()).select_from(EmailAnalysis).where(
-        EmailAnalysis.user_id == current_user.id, EmailAnalysis.created_at >= since
-    )
+    query = select(
+        func.count().filter(EmailAnalysis.is_business_lead.is_(True)).label("business_leads"),
+        func.count().filter(EmailAnalysis.is_invoice.is_(True)).label("invoices"),
+        func.count().filter(EmailAnalysis.is_meeting.is_(True)).label("meetings_today"),
+        func.count().filter(EmailAnalysis.is_phishing.is_(True)).label("possible_phishing"),
+        func.count()
+        .filter(EmailAnalysis.action_required.is_not(None) & EmailAnalysis.status.in_(["new", "read"]))
+        .label("follow_ups"),
+    ).where(EmailAnalysis.user_id == current_user.id, EmailAnalysis.created_at >= since)
 
-    async def count(extra_filter) -> int:
-        result = await db.execute(base.where(extra_filter))
-        return result.scalar_one()
+    row = (await db.execute(query)).one()
 
-    business_leads = await count(EmailAnalysis.is_business_lead.is_(True))
-    invoices = await count(EmailAnalysis.is_invoice.is_(True))
-    meetings_today = await count(EmailAnalysis.is_meeting.is_(True))
-    possible_phishing = await count(EmailAnalysis.is_phishing.is_(True))
-    follow_ups = await count(
-        EmailAnalysis.action_required.is_not(None) & EmailAnalysis.status.in_(["new", "read"])
-    )
-
-    estimated_minutes = follow_ups * 2 + business_leads * 3 + invoices + meetings_today
+    estimated_minutes = row.follow_ups * 2 + row.business_leads * 3 + row.invoices + row.meetings_today
 
     return MorningBrief(
-        business_leads=business_leads,
-        invoices=invoices,
-        meetings_today=meetings_today,
-        follow_ups=follow_ups,
-        possible_phishing=possible_phishing,
+        business_leads=row.business_leads,
+        invoices=row.invoices,
+        meetings_today=row.meetings_today,
+        follow_ups=row.follow_ups,
+        possible_phishing=row.possible_phishing,
         estimated_minutes=estimated_minutes,
     )
 
@@ -145,7 +147,8 @@ async def morning_brief(current_user: User = Depends(get_current_user), db: Asyn
 @router.get("/notifications/pending", response_model=list[EmailAnalysisOut])
 async def pending_notifications(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     query = (
-        select(EmailAnalysis)
+        select(EmailAnalysis, RawEmail.received_at)
+        .join(RawEmail, RawEmail.id == EmailAnalysis.raw_email_id)
         .where(
             EmailAnalysis.user_id == current_user.id,
             EmailAnalysis.should_notify.is_(True),
@@ -154,7 +157,10 @@ async def pending_notifications(current_user: User = Depends(get_current_user), 
         .order_by(EmailAnalysis.created_at.desc())
     )
     result = await db.execute(query)
-    return result.scalars().all()
+    return [
+        EmailAnalysisOut.model_validate(analysis).model_copy(update={"received_at": received_at})
+        for analysis, received_at in result.all()
+    ]
 
 
 @router.post("/notifications/{analysis_id}/mark-notified", response_model=EmailAnalysisOut)
