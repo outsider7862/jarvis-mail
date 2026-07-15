@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -34,6 +34,8 @@ class EmailAnalysisOut(BaseModel):
     should_notify: bool
     created_at: datetime
     received_at: datetime | None = None
+    sender: str | None = None
+    subject: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -82,6 +84,7 @@ async def _get_owned_analysis(analysis_id: uuid.UUID, current_user: User, db: As
 async def list_analyses(
     category: str | None = None,
     priority: str | None = None,
+    status: str | None = Query(default=None, description="Filter by handling status (new/read/actioned/dismissed)"),
     sender: str | None = Query(default=None, description="Filter by sender substring"),
     keyword: str | None = Query(default=None, description="Filter by keyword in summary"),
     is_business_lead: bool | None = Query(default=None),
@@ -95,7 +98,7 @@ async def list_analyses(
     db: AsyncSession = Depends(get_db),
 ):
     query = (
-        select(EmailAnalysis, RawEmail.received_at)
+        select(EmailAnalysis, RawEmail.received_at, RawEmail.sender, RawEmail.subject)
         .join(RawEmail, RawEmail.id == EmailAnalysis.raw_email_id)
         .where(EmailAnalysis.user_id == current_user.id)
     )
@@ -124,6 +127,8 @@ async def list_analyses(
 
     if priority:
         query = query.where(EmailAnalysis.priority == priority)
+    if status:
+        query = query.where(EmailAnalysis.status == status)
     if keyword:
         query = query.where(EmailAnalysis.summary.ilike(f"%{keyword}%"))
     if sender:
@@ -132,8 +137,10 @@ async def list_analyses(
     query = query.order_by(EmailAnalysis.created_at.desc())
     result = await db.execute(query)
     return [
-        EmailAnalysisOut.model_validate(analysis).model_copy(update={"received_at": received_at})
-        for analysis, received_at in result.all()
+        EmailAnalysisOut.model_validate(analysis).model_copy(
+            update={"received_at": received_at, "sender": raw_sender, "subject": raw_subject}
+        )
+        for analysis, received_at, raw_sender, raw_subject in result.all()
     ]
 
 
@@ -179,10 +186,40 @@ async def morning_brief(current_user: User = Depends(get_current_user), db: Asyn
     )
 
 
+@router.get("/needs-attention", response_model=list[EmailAnalysisOut])
+async def needs_attention(
+    limit: int = Query(default=5, ge=1, le=20),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Top unhandled urgent/high-priority emails, for the Overview's action list."""
+    query = (
+        select(EmailAnalysis, RawEmail.received_at, RawEmail.sender, RawEmail.subject)
+        .join(RawEmail, RawEmail.id == EmailAnalysis.raw_email_id)
+        .where(
+            EmailAnalysis.user_id == current_user.id,
+            EmailAnalysis.priority.in_(["urgent", "high"]),
+            EmailAnalysis.status.in_(["new", "read"]),
+        )
+        .order_by(
+            case((EmailAnalysis.priority == "urgent", 0), else_=1),
+            EmailAnalysis.created_at.desc(),
+        )
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    return [
+        EmailAnalysisOut.model_validate(analysis).model_copy(
+            update={"received_at": received_at, "sender": raw_sender, "subject": raw_subject}
+        )
+        for analysis, received_at, raw_sender, raw_subject in result.all()
+    ]
+
+
 @router.get("/notifications/pending", response_model=list[EmailAnalysisOut])
 async def pending_notifications(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     query = (
-        select(EmailAnalysis, RawEmail.received_at)
+        select(EmailAnalysis, RawEmail.received_at, RawEmail.sender, RawEmail.subject)
         .join(RawEmail, RawEmail.id == EmailAnalysis.raw_email_id)
         .where(
             EmailAnalysis.user_id == current_user.id,
@@ -193,8 +230,10 @@ async def pending_notifications(current_user: User = Depends(get_current_user), 
     )
     result = await db.execute(query)
     return [
-        EmailAnalysisOut.model_validate(analysis).model_copy(update={"received_at": received_at})
-        for analysis, received_at in result.all()
+        EmailAnalysisOut.model_validate(analysis).model_copy(
+            update={"received_at": received_at, "sender": raw_sender, "subject": raw_subject}
+        )
+        for analysis, received_at, raw_sender, raw_subject in result.all()
     ]
 
 
