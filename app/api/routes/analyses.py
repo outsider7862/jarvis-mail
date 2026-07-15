@@ -76,6 +76,13 @@ async def list_analyses(
     priority: str | None = None,
     sender: str | None = Query(default=None, description="Filter by sender substring"),
     keyword: str | None = Query(default=None, description="Filter by keyword in summary"),
+    is_business_lead: bool | None = Query(default=None),
+    is_invoice: bool | None = Query(default=None),
+    is_meeting: bool | None = Query(default=None),
+    is_customer_support: bool | None = Query(default=None),
+    is_newsletter: bool | None = Query(default=None),
+    is_spam: bool | None = Query(default=None),
+    is_phishing: bool | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -85,8 +92,28 @@ async def list_analyses(
         .where(EmailAnalysis.user_id == current_user.id)
     )
 
+    # Primary category filter (exact match — kept for backward compat, and it's
+    # still the only way to reach "personal" since that has no boolean flag).
     if category:
         query = query.where(EmailAnalysis.category == category)
+
+    # Flag-based filters — these catch emails regardless of primary category, so
+    # e.g. a business_lead email that's also is_meeting shows up under Meetings too.
+    if is_business_lead is not None:
+        query = query.where(EmailAnalysis.is_business_lead.is_(is_business_lead))
+    if is_invoice is not None:
+        query = query.where(EmailAnalysis.is_invoice.is_(is_invoice))
+    if is_meeting is not None:
+        query = query.where(EmailAnalysis.is_meeting.is_(is_meeting))
+    if is_customer_support is not None:
+        query = query.where(EmailAnalysis.is_customer_support.is_(is_customer_support))
+    if is_newsletter is not None:
+        query = query.where(EmailAnalysis.is_newsletter.is_(is_newsletter))
+    if is_spam is not None:
+        query = query.where(EmailAnalysis.is_spam.is_(is_spam))
+    if is_phishing is not None:
+        query = query.where(EmailAnalysis.is_phishing.is_(is_phishing))
+
     if priority:
         query = query.where(EmailAnalysis.priority == priority)
     if keyword:
