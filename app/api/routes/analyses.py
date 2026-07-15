@@ -38,11 +38,19 @@ class EmailAnalysisOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AttachmentInfo(BaseModel):
+    name: str | None
+    mime_type: str | None
+    size: int | None
+
+
 class RawEmailOut(BaseModel):
     sender: str | None
     subject: str | None
     body_text: str | None
     received_at: datetime | None
+    thread_id: str | None
+    attachments: list[AttachmentInfo]
 
     model_config = {"from_attributes": True}
 
@@ -216,4 +224,27 @@ async def get_raw_email(
     raw = result.scalar_one_or_none()
     if raw is None:
         raise HTTPException(status_code=404, detail="Raw email not found")
-    return raw
+
+    # Parse attachments from the stored Composio payload
+    attachment_list = raw.raw_payload.get("attachment_list", []) if raw.raw_payload else []
+    attachments = [
+        {
+            "name": a.get("name") or a.get("filename"),
+            "mime_type": a.get("mimeType") or a.get("mime_type"),
+            "size": a.get("size"),
+        }
+        for a in attachment_list
+        if a  # skip nulls
+    ]
+
+    # thread_id for deep-linking back to Gmail
+    thread_id = raw.raw_payload.get("thread_id") if raw.raw_payload else None
+
+    return {
+        "sender": raw.sender,
+        "subject": raw.subject,
+        "body_text": raw.body_text,
+        "received_at": raw.received_at,
+        "thread_id": thread_id,
+        "attachments": attachments,
+    }
