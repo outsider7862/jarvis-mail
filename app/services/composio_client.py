@@ -36,6 +36,11 @@ def start_outlook_connection(user_id: str) -> str:
 
 # ── Trigger creation ──────────────────────────────────────────────────────────
 
+def delete_trigger(trigger_id: str) -> None:
+    """Permanently removes a trigger instance — used when a user disconnects their inbox."""
+    composio.triggers.delete(trigger_id)
+
+
 def create_gmail_trigger(user_id: str) -> str:
     """
     Creates a GMAIL_NEW_GMAIL_MESSAGE trigger for the given user.

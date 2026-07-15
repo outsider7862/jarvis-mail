@@ -52,12 +52,13 @@ async def composio_webhook(
     composio_account_id = parsed["connected_account_id"]
     result = await db.execute(
         select(ConnectedAccount).where(
-            ConnectedAccount.composio_connected_account_id == composio_account_id
+            ConnectedAccount.composio_connected_account_id == composio_account_id,
+            ConnectedAccount.active.is_(True),
         )
     )
-    connected_account = result.scalar_one_or_none()
+    connected_account = result.scalars().first()
     if connected_account is None:
-        return {"status": "ignored", "reason": "unknown connected account"}
+        return {"status": "ignored", "reason": "unknown or inactive connected account"}
 
     data = parsed["data"]
     sender, subject, body = _extract_gmail_fields(data)

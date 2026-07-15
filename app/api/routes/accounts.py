@@ -10,7 +10,7 @@ from app.core.auth import get_current_user
 from app.core.config import settings
 from app.db.models import ConnectedAccount, User
 from app.db.session import get_db
-from app.services.composio_client import composio, create_gmail_trigger, start_gmail_connection
+from app.services.composio_client import composio, create_gmail_trigger, delete_trigger, start_gmail_connection
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -72,13 +72,15 @@ async def create_trigger(
 ):
     # Idempotent: a browser-back-button replay of the OAuth callback URL must not
     # create a second row (or a second live trigger) for the same connection.
+    # Only active rows count — a disconnected account must be reconnectable.
     existing = await db.execute(
         select(ConnectedAccount).where(
             ConnectedAccount.user_id == current_user.id,
             ConnectedAccount.provider == "gmail",
+            ConnectedAccount.active.is_(True),
         )
     )
-    if existing.scalar_one_or_none() is not None:
+    if existing.scalars().first() is not None:
         return TriggerResponse(success=True)
 
     accounts = await run_in_threadpool(
@@ -107,4 +109,34 @@ async def create_trigger(
     db.add(connected_account)
     await db.commit()
 
+    return TriggerResponse(success=True)
+
+
+@router.post("/disconnect/gmail", response_model=TriggerResponse)
+async def disconnect_gmail(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(ConnectedAccount).where(
+            ConnectedAccount.user_id == current_user.id,
+            ConnectedAccount.provider == "gmail",
+            ConnectedAccount.active.is_(True),
+        )
+    )
+    accounts = result.scalars().all()
+    if not accounts:
+        raise HTTPException(status_code=404, detail="No connected Gmail account")
+
+    for account in accounts:
+        if account.composio_trigger_id:
+            # Best effort — deactivating the local row already stops webhook
+            # processing, so a Composio hiccup shouldn't block the disconnect.
+            try:
+                await run_in_threadpool(delete_trigger, account.composio_trigger_id)
+            except Exception:  # noqa: BLE001
+                pass
+        account.active = False
+
+    await db.commit()
     return TriggerResponse(success=True)
