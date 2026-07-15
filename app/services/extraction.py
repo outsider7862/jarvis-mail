@@ -34,7 +34,19 @@ conservative — existing-client project chatter is NOT a new lead.
 mismatched sender/reply-to, urgent credential or payment requests, suspicious \
 links, impersonation of a known contact or service. Flag generously here; a false \
 positive costs the user a glance, a missed phishing email could cost real money.
+- personal: emails from friends, family, or social contacts — invitations, \
+personal conversations, dating, celebrations, condolences. These should NOT be \
+treated as business emails or flagged as low priority just because they are not \
+work-related.
 - other: use this rather than forcing a bad fit into another category.
+
+Summary guidance — CRITICAL:
+- Preserve all specific numbers, percentages, monetary amounts, and dates verbatim \
+in the summary. Do not round or generalise them.
+- Example: write "2% of users" not "some users", write "PKR 150,000" not \
+"a budget", write "by August 31" not "soon".
+- Keep key context that affects the recipient's decision — deadlines, amounts, \
+names, and conditions matter.
 
 Only fill in optional fields (action_required, deadline, lead_detail) when you can \
 support them from the email content. Leave them null rather than guessing."""

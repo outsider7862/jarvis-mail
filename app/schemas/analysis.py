@@ -10,6 +10,7 @@ Category = Literal[
     "newsletter",
     "spam",
     "phishing",
+    "personal",
     "other",
 ]
 
