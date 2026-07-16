@@ -67,6 +67,7 @@ class MorningBrief(BaseModel):
     meetings_today: int
     follow_ups: int
     possible_phishing: int
+    personal: int
     estimated_minutes: int
 
 
@@ -167,6 +168,8 @@ async def morning_brief(current_user: User = Depends(get_current_user), db: Asyn
         func.count().filter(EmailAnalysis.is_invoice.is_(True)).label("invoices"),
         func.count().filter(EmailAnalysis.is_meeting.is_(True)).label("meetings_today"),
         func.count().filter(EmailAnalysis.is_phishing.is_(True)).label("possible_phishing"),
+        # "personal" has no boolean flag column — it lives only as the primary category.
+        func.count().filter(EmailAnalysis.category == "personal").label("personal"),
         func.count()
         .filter(EmailAnalysis.action_required.is_not(None) & EmailAnalysis.status.in_(["new", "read"]))
         .label("follow_ups"),
@@ -182,6 +185,7 @@ async def morning_brief(current_user: User = Depends(get_current_user), db: Asyn
         meetings_today=row.meetings_today,
         follow_ups=row.follow_ups,
         possible_phishing=row.possible_phishing,
+        personal=row.personal,
         estimated_minutes=estimated_minutes,
     )
 
