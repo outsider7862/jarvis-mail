@@ -20,6 +20,9 @@ composio-client==1.41.0
 # --- Auth ---
 PyJWT[crypto]==2.13.0
 
+# --- Rate limiting ---
+slowapi==0.1.9
+
 # --- OpenAI (extraction) ---
 openai==2.44.0
 

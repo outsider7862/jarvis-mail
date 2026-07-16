@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
+from app.core.rate_limit import limiter
 from app.db.models import User, UserProfile
 from app.db.session import get_db
 
@@ -56,7 +57,9 @@ async def get_profile(
 
 
 @router.patch("", response_model=ProfileOut)
+@limiter.limit("30/minute")
 async def update_profile(
+    request: Request,
     update: ProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

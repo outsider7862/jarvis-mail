@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.db.models import ConnectedAccount, User
 from app.db.session import get_db
 from app.services.composio_client import composio, create_gmail_trigger, delete_trigger, start_gmail_connection
@@ -59,7 +60,8 @@ async def list_connected_accounts(
 
 
 @router.post("/connect/gmail", response_model=ConnectResponse)
-async def connect_gmail(current_user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def connect_gmail(request: Request, current_user: User = Depends(get_current_user)):
     return_url = f"{settings.frontend_url}/dashboard/settings?connected=true"
     redirect_url = await run_in_threadpool(start_gmail_connection, str(current_user.id), return_url)
     return ConnectResponse(redirect_url=redirect_url)

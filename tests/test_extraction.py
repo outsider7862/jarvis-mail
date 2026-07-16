@@ -27,10 +27,22 @@ async def test_analyze_email_calls_responses_parse_with_correct_shape():
     mock_response = AsyncMock()
     mock_response.output_parsed = fake_result
 
-    with patch("app.services.extraction.client.responses.parse", new=AsyncMock(return_value=mock_response)) as mocked:
-        result = await analyze_email(subject="Quote request", body_text="Can you quote a logo design?", sender="[email protected]")
+    # analyze_email builds its own client (`async with AsyncOpenAI(...) as client`),
+    # so the module-level `client` is never touched — patch the class at the point
+    # of instantiation instead, or the mock is silently bypassed and the test
+    # makes a real OpenAI call.
+    mock_client = AsyncMock()
+    mock_client.responses.parse = AsyncMock(return_value=mock_response)
+
+    with patch("app.services.extraction.AsyncOpenAI") as mock_openai_cls:
+        mock_openai_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_openai_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        result = await analyze_email(
+            subject="Quote request", body_text="Can you quote a logo design?", sender="client@example.com"
+        )
 
     assert result.category == "business_lead"
+    mocked = mock_client.responses.parse
     mocked.assert_awaited_once()
     call_kwargs = mocked.call_args.kwargs
     assert call_kwargs["text_format"] is EmailAnalysisExtraction

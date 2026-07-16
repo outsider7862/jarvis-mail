@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import limiter
 from app.db.models import ConnectedAccount, EmailAnalysis, Lead, RawEmail, UserProfile
 from app.db.session import get_db
 from app.services.composio_client import parse_webhook
@@ -35,14 +36,23 @@ def _extract_gmail_fields(data: dict) -> tuple[str, str, str]:
     return sender, subject, body
 
 @router.post("/composio")
+@limiter.limit("60/minute")
 async def composio_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     raw_body = await request.body()
-    
-    parsed = parse_webhook(raw_body, dict(request.headers))
+
+    # This is the only unauthenticated endpoint — the Composio signature IS its
+    # auth. A bad/missing/tampered signature raises out of parse_webhook; turn
+    # that into a clean 401 rather than letting it surface as an unhandled 500
+    # (which leaks a stack trace and noises up the logs on every junk request).
+    try:
+        parsed = parse_webhook(raw_body, dict(request.headers))
+    except Exception:  # noqa: BLE001 — SDK raises its own ValidationError types
+        raise HTTPException(status_code=401, detail="Invalid webhook signature") from None
+
     if parsed is None:
         return {"status": "ignored", "reason": "not a trigger message event"}
 
