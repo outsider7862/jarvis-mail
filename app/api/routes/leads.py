@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,7 @@ class LeadOut(BaseModel):
     service_requested: str | None
     budget_mentioned: str | None
     status: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

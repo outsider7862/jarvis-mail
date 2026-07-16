@@ -95,6 +95,8 @@ async def list_analyses(
     is_newsletter: bool | None = Query(default=None),
     is_spam: bool | None = Query(default=None),
     is_phishing: bool | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200, description="Page size"),
+    offset: int = Query(default=0, ge=0, description="Rows to skip"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -135,7 +137,10 @@ async def list_analyses(
     if sender:
         query = query.where(RawEmail.sender.ilike(f"%{sender}%"))
 
-    query = query.order_by(EmailAnalysis.created_at.desc())
+    # id is a tiebreaker: created_at alone isn't guaranteed unique, and a
+    # non-deterministic order across pages would drop or duplicate rows.
+    query = query.order_by(EmailAnalysis.created_at.desc(), EmailAnalysis.id.desc())
+    query = query.limit(limit).offset(offset)
     result = await db.execute(query)
     return [
         EmailAnalysisOut.model_validate(analysis).model_copy(
