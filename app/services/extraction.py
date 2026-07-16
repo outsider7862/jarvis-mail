@@ -52,15 +52,42 @@ Only fill in optional fields (action_required, deadline, lead_detail) when you c
 support them from the email content. Leave them null rather than guessing."""
 
 
-async def analyze_email(*, subject: str, body_text: str, sender: str) -> EmailAnalysisExtraction:
+def _build_profile_context(user_profile: dict | None) -> str:
+    """Turns the onboarding profile into a short prompt suffix. Empty when no profile."""
+    if not user_profile:
+        return ""
+    parts = []
+    if user_profile.get("display_name"):
+        parts.append(f"The user's name is {user_profile['display_name']}.")
+    if user_profile.get("work_type"):
+        parts.append(f"They work as a {user_profile['work_type']}.")
+    if user_profile.get("email_use"):
+        parts.append(f"They mainly use email for {user_profile['email_use']}.")
+    if user_profile.get("preferred_tone"):
+        parts.append(f"Their preferred communication tone is {user_profile['preferred_tone']}.")
+    if user_profile.get("custom_instructions"):
+        parts.append(f"Additional context: {user_profile['custom_instructions']}")
+    if not parts:
+        return ""
+    return "\n\nUser profile:\n" + " ".join(parts)
+
+
+async def analyze_email(
+    *,
+    subject: str,
+    body_text: str,
+    sender: str,
+    user_profile: dict | None = None,
+) -> EmailAnalysisExtraction:
     # Create a fresh client per call — avoids closed connection pool
     # issues when running inside FastAPI background tasks
+    system_prompt = SYSTEM_PROMPT + _build_profile_context(user_profile)
     async with AsyncOpenAI(api_key=settings.openai_api_key) as client:
         truncated_body = (body_text or "")[:10_000]
         response = await client.responses.parse(
             model=settings.openai_extraction_model,
             input=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": f"From: {sender}\nSubject: {subject}\n\nBody:\n{truncated_body}",

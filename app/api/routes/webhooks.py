@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ConnectedAccount, EmailAnalysis, Lead, RawEmail
+from app.db.models import ConnectedAccount, EmailAnalysis, Lead, RawEmail, UserProfile
 from app.db.session import get_db
 from app.services.composio_client import parse_webhook
 from app.services.extraction import analyze_email, compute_should_notify
@@ -94,11 +94,25 @@ async def process_email(raw_email_id: uuid.UUID, user_id: uuid.UUID) -> None:
         if raw_email is None:
             return
 
+        # Personalize classification with the user's onboarding profile, if any.
+        profile_result = await db.execute(
+            select(UserProfile).where(UserProfile.user_id == user_id)
+        )
+        profile_row = profile_result.scalar_one_or_none()
+        user_profile = {
+            "display_name": profile_row.display_name,
+            "work_type": profile_row.work_type,
+            "email_use": profile_row.email_use,
+            "preferred_tone": profile_row.preferred_tone,
+            "custom_instructions": profile_row.custom_instructions,
+        } if profile_row else None
+
         try:
             extraction = await analyze_email(
                 subject=raw_email.subject or "",
                 body_text=raw_email.body_text or "",
                 sender=raw_email.sender or "",
+                user_profile=user_profile,
             )
         except Exception as exc:  # noqa: BLE001
             import traceback
