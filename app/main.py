@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.routes import accounts, analyses, leads, profile, webhooks
+from app.api.routes import accounts, analyses, leads, profile, reply, webhooks
 from app.core.config import settings
 from app.core.rate_limit import limiter
 
@@ -40,6 +40,7 @@ app.include_router(leads.router)
 app.include_router(analyses.router)
 app.include_router(accounts.router)
 app.include_router(profile.router)
+app.include_router(reply.router)
 
 
 @app.get("/health")

@@ -161,6 +161,32 @@ class Lead(Base):
     analysis: Mapped["EmailAnalysis"] = relationship(back_populates="lead")
 
 
+class ReplyFeedback(Base):
+    """
+    The before/after of a JARVIS draft: what it wrote vs. what the user actually
+    kept. This is the learning signal — recent rows get fed back into the draft
+    prompt as style examples. The sent email itself is never stored, only the
+    draft diff.
+    """
+
+    __tablename__ = "reply_feedback"
+    __table_args__ = (
+        # _get_user_style_context reads the newest rows for one user.
+        Index("ix_reply_feedback_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    analysis_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("email_analyses.id"), nullable=False)
+    original_draft: Mapped[str] = mapped_column(Text, nullable=False)
+    edited_draft: Mapped[str] = mapped_column(Text, nullable=False)
+    intent: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped["User"] = relationship()
+
+
 class UserProfile(Base):
     """
     Personalization captured during onboarding — feeds the classifier's system
