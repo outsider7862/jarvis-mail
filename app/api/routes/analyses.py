@@ -8,7 +8,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
-from app.db.models import EmailAnalysis, RawEmail, User
+from app.db.models import ConnectedAccount, EmailAnalysis, RawEmail, User
 from app.db.session import get_db
 
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
@@ -52,6 +52,10 @@ class RawEmailOut(BaseModel):
     body_text: str | None
     received_at: datetime | None
     thread_id: str | None
+    message_id: str | None
+    # Which inbox this arrived in — lets the dashboard deep-link into the right
+    # Gmail account instead of whichever one the browser has as default.
+    connected_email: str | None
     attachments: list[AttachmentInfo]
 
     model_config = {"from_attributes": True}
@@ -288,11 +292,23 @@ async def get_raw_email(
     # thread_id for deep-linking back to Gmail
     thread_id = raw.raw_payload.get("thread_id") if raw.raw_payload else None
 
+    payload = raw.raw_payload or {}
+    message_id = raw.composio_message_id or payload.get("message_id") or payload.get("id")
+
+    # raw_email → connected_account → email_address: which of the user's inboxes
+    # this landed in.
+    account_result = await db.execute(
+        select(ConnectedAccount).where(ConnectedAccount.id == raw.connected_account_id)
+    )
+    connected_account = account_result.scalar_one_or_none()
+
     return {
         "sender": raw.sender,
         "subject": raw.subject,
         "body_text": raw.body_text,
         "received_at": raw.received_at,
         "thread_id": thread_id,
+        "message_id": message_id,
+        "connected_email": connected_account.email_address if connected_account else None,
         "attachments": attachments,
     }
