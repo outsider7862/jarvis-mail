@@ -38,7 +38,23 @@ positive costs the user a glance, a missed phishing email could cost real money.
 personal conversations, dating, celebrations, condolences. These should NOT be \
 treated as business emails or flagged as low priority just because they are not \
 work-related.
+- order: order confirmations, shipping notifications, delivery updates, tracking \
+emails, and purchase receipts. The user bought or ordered something and this is a \
+transactional update about it.
+- otp: emails containing a one-time password, verification code, login code, or \
+any time-sensitive authentication code. Treat these as high priority since codes \
+expire. Never repeat the actual code in the summary.
+- security_alert: legitimate security notifications from known services — new \
+device logins, password change confirmations, account activity summaries. CRITICAL \
+distinction from phishing: security alerts do NOT ask the user to click a link to \
+verify credentials or take urgent action. They inform, not demand. If the email \
+pressures the user to act urgently or click a link, classify as phishing instead.
 - other: use this rather than forcing a bad fit into another category.
+
+Priority guidance:
+- Emails classified as otp should always be priority='urgent' — verification codes \
+expire quickly.
+- Security alerts should be priority='high'.
 
 Summary guidance — CRITICAL:
 - Preserve all specific numbers, percentages, monetary amounts, and dates verbatim \
@@ -111,5 +127,9 @@ def compute_should_notify(analysis: EmailAnalysisExtraction) -> bool:
     if analysis.is_phishing:
         return True
     if analysis.is_meeting:
+        return True
+    if analysis.is_otp:
+        return True
+    if analysis.is_security_alert:
         return True
     return False

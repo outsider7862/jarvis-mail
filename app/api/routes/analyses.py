@@ -29,6 +29,9 @@ class EmailAnalysisOut(BaseModel):
     is_newsletter: bool
     is_spam: bool
     is_phishing: bool
+    is_order: bool
+    is_otp: bool
+    is_security_alert: bool
     confidence: float
     status: str
     should_notify: bool
@@ -99,6 +102,9 @@ async def list_analyses(
     is_newsletter: bool | None = Query(default=None),
     is_spam: bool | None = Query(default=None),
     is_phishing: bool | None = Query(default=None),
+    is_order: bool | None = Query(default=None),
+    is_otp: bool | None = Query(default=None),
+    is_security_alert: bool | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200, description="Page size"),
     offset: int = Query(default=0, ge=0, description="Rows to skip"),
     current_user: User = Depends(get_current_user),
@@ -131,6 +137,12 @@ async def list_analyses(
         query = query.where(EmailAnalysis.is_spam.is_(is_spam))
     if is_phishing is not None:
         query = query.where(EmailAnalysis.is_phishing.is_(is_phishing))
+    if is_order is not None:
+        query = query.where(EmailAnalysis.is_order.is_(is_order))
+    if is_otp is not None:
+        query = query.where(EmailAnalysis.is_otp.is_(is_otp))
+    if is_security_alert is not None:
+        query = query.where(EmailAnalysis.is_security_alert.is_(is_security_alert))
 
     if priority:
         query = query.where(EmailAnalysis.priority == priority)

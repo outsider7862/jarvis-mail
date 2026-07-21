@@ -11,6 +11,9 @@ Category = Literal[
     "spam",
     "phishing",
     "personal",
+    "order",
+    "otp",
+    "security_alert",
     "other",
 ]
 
@@ -85,6 +88,24 @@ class EmailAnalysisExtraction(BaseModel):
     is_phishing: bool = Field(
         description="True if this shows signs of a phishing/social-engineering attempt (spoofed sender, "
         "urgent credential/payment requests, suspicious links, mismatched reply-to, etc.)."
+    )
+    is_order: bool = Field(
+        default=False,
+        description="True for order confirmations, shipping notifications, delivery updates, tracking "
+        "emails, and purchase receipts from any service.",
+    )
+    is_otp: bool = Field(
+        default=False,
+        description="True for emails containing one-time passwords, verification codes, login codes, "
+        "or any time-sensitive authentication codes.",
+    )
+    is_security_alert: bool = Field(
+        default=False,
+        description="True for legitimate security notifications — new device logins, password change "
+        "confirmations, account activity alerts from known services. IMPORTANT: distinguish from "
+        "phishing. Security alerts come from known services the user likely uses and do NOT ask for "
+        "credentials or contain suspicious links. Phishing pretends to be security alerts but requests "
+        "action. When in doubt, prefer is_phishing over is_security_alert.",
     )
 
     confidence: float = Field(ge=0.0, le=1.0, description="Your overall confidence in this classification, 0 to 1.")

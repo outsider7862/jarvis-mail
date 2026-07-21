@@ -114,6 +114,9 @@ class EmailAnalysis(Base):
     is_newsletter: Mapped[bool] = mapped_column(Boolean, default=False)
     is_spam: Mapped[bool] = mapped_column(Boolean, default=False)
     is_phishing: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_order: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_otp: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_security_alert: Mapped[bool] = mapped_column(Boolean, default=False)
 
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
 

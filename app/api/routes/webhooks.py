@@ -148,6 +148,9 @@ async def process_email(raw_email_id: uuid.UUID, user_id: uuid.UUID) -> None:
             is_newsletter=extraction.is_newsletter,
             is_spam=extraction.is_spam,
             is_phishing=extraction.is_phishing,
+            is_order=extraction.is_order,
+            is_otp=extraction.is_otp,
+            is_security_alert=extraction.is_security_alert,
             confidence=extraction.confidence,
             should_notify=compute_should_notify(extraction),
         )
