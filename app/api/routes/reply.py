@@ -33,6 +33,14 @@ class QuickActionsResponse(BaseModel):
     clarifying_question: str | None
 
 
+class DecisionAssistanceResponse(BaseModel):
+    what_sender_wants: str
+    available_options: list[str]
+    recommendation: str
+    reasoning: str
+    risks: list[str] | None
+
+
 class DraftRequest(BaseModel):
     analysis_id: uuid.UUID
     intent: str
@@ -206,6 +214,71 @@ If clarification is needed, example:
         actions=[str(a) for a in actions][:6],
         needs_clarification=bool(result.get("needs_clarification", False)),
         clarifying_question=result.get("clarifying_question"),
+    )
+
+
+@router.get("/{analysis_id}/decision", response_model=DecisionAssistanceResponse)
+@limiter.limit("20/minute")
+async def get_decision_assistance(
+    request: Request,
+    analysis_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    analysis = await _get_owned_analysis(analysis_id, current_user, db)
+    raw_result = await db.execute(
+        select(RawEmail).where(RawEmail.id == analysis.raw_email_id)
+    )
+    raw = raw_result.scalar_one_or_none()
+
+    profile_result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == current_user.id)
+    )
+    profile = profile_result.scalar_one_or_none()
+
+    prompt = f"""You are JARVIS, an AI decision assistant for a service business owner.
+
+Analyze this email and help the user decide how to respond.
+Be concise and practical. Do not make decisions for the user — reduce decisions.
+
+User context:
+- Work type: {profile.work_type if profile else 'professional'}
+- Preferred tone: {profile.preferred_tone if profile else 'professional'}
+
+Email:
+Category: {analysis.category}
+Summary: {analysis.summary}
+From: {raw.sender if raw else 'unknown'}
+Body: {(raw.body_text or '')[:2000] if raw else ''}
+
+Return ONLY a JSON object with this structure:
+{{
+  "what_sender_wants": "One sentence describing what the sender is asking for.",
+  "available_options": ["Option 1", "Option 2", "Option 3"],
+  "recommendation": "What JARVIS recommends in one sentence.",
+  "reasoning": "Why this is recommended in 1-2 sentences.",
+  "risks": ["Risk 1", "Risk 2"]
+}}
+
+If there are no meaningful risks, set risks to null.
+Keep everything concise — this is decision support, not a report."""
+
+    result = await _complete_json([{"role": "user", "content": prompt}], temperature=0.3)
+
+    # Bail if the model didn't return the fields we need — better a clean 500
+    # the frontend can show a retry for than a half-populated card.
+    required = ("what_sender_wants", "available_options", "recommendation", "reasoning")
+    if not all(result.get(k) for k in required):
+        raise HTTPException(status_code=500, detail="Failed to generate decision assistance")
+
+    options = result.get("available_options") or []
+    risks = result.get("risks")
+    return DecisionAssistanceResponse(
+        what_sender_wants=str(result["what_sender_wants"]),
+        available_options=[str(o) for o in options][:4],
+        recommendation=str(result["recommendation"]),
+        reasoning=str(result["reasoning"]),
+        risks=[str(r) for r in risks][:2] if isinstance(risks, list) and risks else None,
     )
 
 

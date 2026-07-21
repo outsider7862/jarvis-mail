@@ -17,6 +17,28 @@ Category = Literal[
 Priority = Literal["low", "medium", "high", "urgent"]
 
 
+class DecisionAssistance(BaseModel):
+    """Decision support for a single email — reduces the user's choices, doesn't make them."""
+
+    what_sender_wants: str = Field(
+        description="One sentence: what is the sender asking for or trying to achieve?"
+    )
+    available_options: list[str] = Field(
+        description="2-4 concrete options the recipient could take. Short labels only.",
+        max_length=4,
+    )
+    recommendation: str = Field(
+        description="What JARVIS recommends doing. One sentence."
+    )
+    reasoning: str = Field(
+        description="Why JARVIS recommends that option. 1-2 sentences max."
+    )
+    risks: list[str] | None = Field(
+        default=None,
+        description="Any risks or trade-offs to consider. Max 2 items. Null if none.",
+    )
+
+
 class LeadDetail(BaseModel):
     """Only populated when category == 'business_lead'. Leave fields null rather than guessing."""
 
