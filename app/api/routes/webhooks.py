@@ -152,6 +152,7 @@ async def process_email(raw_email_id: uuid.UUID, user_id: uuid.UUID) -> None:
             is_otp=extraction.is_otp,
             is_security_alert=extraction.is_security_alert,
             confidence=extraction.confidence,
+            confidence_explanation=extraction.confidence_explanation,
             should_notify=compute_should_notify(extraction),
         )
         db.add(analysis)

@@ -109,6 +109,14 @@ class EmailAnalysisExtraction(BaseModel):
     )
 
     confidence: float = Field(ge=0.0, le=1.0, description="Your overall confidence in this classification, 0 to 1.")
+    confidence_explanation: str | None = Field(
+        default=None,
+        description="One sentence explaining why this confidence score was assigned. "
+        "Example: 'High confidence because the email explicitly requests a service quote "
+        "with a named budget and deadline.' or 'Medium confidence because the email could "
+        "be either a lead or a support request.' Leave null only if confidence is above "
+        "0.95 and the classification is unambiguous.",
+    )
 
     lead_detail: LeadDetail | None = Field(
         default=None, description="Populate only when is_business_lead is true. Otherwise null."

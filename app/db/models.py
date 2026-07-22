@@ -119,6 +119,7 @@ class EmailAnalysis(Base):
     is_security_alert: Mapped[bool] = mapped_column(Boolean, default=False)
 
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    confidence_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # "new" -> shown as unread in dashboard; "read"; "actioned"; "dismissed"
     status: Mapped[str] = mapped_column(String, default="new")

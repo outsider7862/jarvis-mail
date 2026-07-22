@@ -33,6 +33,7 @@ class EmailAnalysisOut(BaseModel):
     is_otp: bool
     is_security_alert: bool
     confidence: float
+    confidence_explanation: str | None
     status: str
     should_notify: bool
     created_at: datetime
