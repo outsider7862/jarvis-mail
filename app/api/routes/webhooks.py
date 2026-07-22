@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.rate_limit import limiter
 from app.db.models import ConnectedAccount, EmailAnalysis, Lead, RawEmail, UserProfile
 from app.db.session import get_db
+from app.services.calendar_extractor import maybe_create_calendar_event
 from app.services.composio_client import parse_webhook
 from app.services.extraction import analyze_email, compute_should_notify
 from app.services.prefilter import is_system_noise
@@ -171,5 +172,8 @@ async def process_email(raw_email_id: uuid.UUID, user_id: uuid.UUID) -> None:
                 status="pending",
             )
             db.add(lead)
+
+        # Extract a pending calendar event if the email has a usable date.
+        await maybe_create_calendar_event(analysis, user_id, db)
 
         await db.commit()

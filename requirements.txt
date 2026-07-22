@@ -23,6 +23,9 @@ PyJWT[crypto]==2.13.0
 # --- Rate limiting ---
 slowapi==0.1.9
 
+# --- Date parsing (calendar event extraction) ---
+python-dateutil==2.9.0.post0
+
 # --- OpenAI (extraction) ---
 openai==2.44.0
 

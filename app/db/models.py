@@ -213,3 +213,38 @@ class UserProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     user: Mapped["User"] = relationship()
+
+
+class CalendarEvent(Base):
+    """
+    Native Jarvis Mail calendar. Events come from two places: extracted from
+    classified emails (source='ai_detected', starts 'pending' until the user
+    confirms) or added by hand (source='manual', auto-confirmed).
+
+    email_analysis_id is ON DELETE SET NULL in the DB, so an event outlives the
+    source email when the 30-day retention job removes it — the event's title and
+    date are user data worth keeping; only the "from email" link goes away.
+    """
+
+    __tablename__ = "calendar_events"
+    __table_args__ = (
+        Index("ix_calendar_events_user_start", "user_id", "start_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    email_analysis_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("email_analyses.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)  # meeting|deadline|order|payment|custom
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String, default="pending")  # pending|confirmed|rejected
+    source: Mapped[str] = mapped_column(String, default="manual")   # ai_detected|manual
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user: Mapped["User"] = relationship()
