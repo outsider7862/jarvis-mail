@@ -41,6 +41,26 @@ def delete_trigger(trigger_id: str) -> None:
     composio.triggers.delete(trigger_id)
 
 
+def list_account_trigger_ids(connected_account_id: str) -> list[str]:
+    """
+    Every trigger instance currently attached to a connected account. Used to
+    reconcile down to a single trigger — repeated connect cycles can otherwise
+    leave several GMAIL_NEW_GMAIL_MESSAGE triggers firing on one mailbox, which
+    ingests each email multiple times.
+    """
+    result = composio.triggers.list_active(
+        connected_account_ids=[connected_account_id], show_disabled=True
+    )
+    ids: list[str] = []
+    for item in getattr(result, "items", None) or []:
+        tid = getattr(item, "id", None)
+        if tid is None and hasattr(item, "model_dump"):
+            tid = item.model_dump().get("id")
+        if tid:
+            ids.append(tid)
+    return ids
+
+
 def create_gmail_trigger(user_id: str) -> str:
     """
     Creates a GMAIL_NEW_GMAIL_MESSAGE trigger for the given user.

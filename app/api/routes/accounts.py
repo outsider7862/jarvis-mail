@@ -11,7 +11,13 @@ from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.db.models import ConnectedAccount, User
 from app.db.session import get_db
-from app.services.composio_client import composio, create_gmail_trigger, delete_trigger, start_gmail_connection
+from app.services.composio_client import (
+    composio,
+    create_gmail_trigger,
+    delete_trigger,
+    list_account_trigger_ids,
+    start_gmail_connection,
+)
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -72,19 +78,17 @@ async def create_trigger(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Idempotent: a browser-back-button replay of the OAuth callback URL must not
-    # create a second row (or a second live trigger) for the same connection.
-    # Only active rows count — a disconnected account must be reconnectable.
-    existing = await db.execute(
-        select(ConnectedAccount).where(
-            ConnectedAccount.user_id == current_user.id,
-            ConnectedAccount.provider == "gmail",
-            ConnectedAccount.active.is_(True),
-        )
-    )
-    if existing.scalars().first() is not None:
-        return TriggerResponse(success=True)
+    """
+    Reconcile the user's Gmail to EXACTLY ONE live trigger and ONE local row.
 
+    This is called after the OAuth callback, including on reconnects and on
+    browser-back replays. Rather than trusting local state (a disconnect that
+    failed to delete its trigger, or a callback that never wrote a row, both
+    leave things inconsistent), we ask Composio what triggers exist on the
+    connection, delete all of them, create one fresh, and upsert a single row.
+    That converges to one-trigger-per-mailbox no matter how tangled the history,
+    which is what stops a single email being ingested several times.
+    """
     accounts = await run_in_threadpool(
         composio.connected_accounts.list,
         user_ids=[str(current_user.id)],
@@ -97,18 +101,40 @@ async def create_trigger(
         raise HTTPException(status_code=404, detail="No active Gmail connection found for this user")
     account = accounts.items[0]
 
+    # Delete every existing trigger on this connection (leftovers from earlier
+    # connect/disconnect cycles) before creating exactly one.
+    try:
+        for tid in await run_in_threadpool(list_account_trigger_ids, account.id):
+            try:
+                await run_in_threadpool(delete_trigger, tid)
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception:  # noqa: BLE001 — listing is best-effort; never block connect
+        pass
+
     trigger_id = await run_in_threadpool(create_gmail_trigger, str(current_user.id))
 
-    connected_account = ConnectedAccount(
-        id=uuid.uuid4(),
-        user_id=current_user.id,
-        provider="gmail",
-        email_address=_extract_email(account, fallback=current_user.email),
-        composio_connected_account_id=account.id,
-        composio_trigger_id=trigger_id,
-        active=True,
+    # Upsert a single gmail row for this user rather than appending a new one each
+    # reconnect (which is how stale/duplicate rows — and missing ones — happened).
+    result = await db.execute(
+        select(ConnectedAccount)
+        .where(
+            ConnectedAccount.user_id == current_user.id,
+            ConnectedAccount.provider == "gmail",
+        )
+        .order_by(ConnectedAccount.active.desc())
     )
-    db.add(connected_account)
+    connected_account = result.scalars().first()
+    if connected_account is None:
+        connected_account = ConnectedAccount(
+            id=uuid.uuid4(), user_id=current_user.id, provider="gmail"
+        )
+        db.add(connected_account)
+
+    connected_account.email_address = _extract_email(account, fallback=current_user.email)
+    connected_account.composio_connected_account_id = account.id
+    connected_account.composio_trigger_id = trigger_id
+    connected_account.active = True
     await db.commit()
 
     return TriggerResponse(success=True)
@@ -131,11 +157,21 @@ async def disconnect_gmail(
         raise HTTPException(status_code=404, detail="No connected Gmail account")
 
     for account in accounts:
-        if account.composio_trigger_id:
-            # Best effort — deactivating the local row already stops webhook
-            # processing, so a Composio hiccup shouldn't block the disconnect.
+        # Delete every trigger on the connection, not just the id we recorded —
+        # earlier cycles may have left extras firing. Best effort: deactivating
+        # the local row already stops webhook processing, so a Composio hiccup
+        # shouldn't block the disconnect.
+        trigger_ids = set(filter(None, [account.composio_trigger_id]))
+        if account.composio_connected_account_id:
             try:
-                await run_in_threadpool(delete_trigger, account.composio_trigger_id)
+                trigger_ids.update(
+                    await run_in_threadpool(list_account_trigger_ids, account.composio_connected_account_id)
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        for tid in trigger_ids:
+            try:
+                await run_in_threadpool(delete_trigger, tid)
             except Exception:  # noqa: BLE001
                 pass
         account.active = False
