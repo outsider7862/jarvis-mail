@@ -41,6 +41,11 @@ def delete_trigger(trigger_id: str) -> None:
     composio.triggers.delete(trigger_id)
 
 
+def delete_connected_account(nanoid: str) -> None:
+    """Permanently removes a connected account (the 'ca_...' OAuth connection)."""
+    composio.connected_accounts.delete(nanoid)
+
+
 def list_account_trigger_ids(connected_account_id: str) -> list[str]:
     """
     Every trigger instance currently attached to a connected account. Used to
