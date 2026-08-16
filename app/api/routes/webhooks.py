@@ -2,6 +2,7 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rate_limit import limiter
@@ -73,18 +74,39 @@ async def composio_webhook(
 
     data = parsed["data"]
     sender, subject, body = _extract_gmail_fields(data)
+    message_id = data.get("message_id") or data.get("id")
+
+    # Composio can deliver the same message more than once (at-least-once
+    # retries, or several active triggers on one mailbox). Without this, each
+    # copy became its own RawEmail + analysis, so one email showed up N times.
+    # Fast path: skip if we've already ingested this message id for this account.
+    if message_id:
+        dupe = await db.execute(
+            select(RawEmail.id).where(
+                RawEmail.connected_account_id == connected_account.id,
+                RawEmail.composio_message_id == message_id,
+            )
+        )
+        if dupe.first() is not None:
+            return {"status": "duplicate", "message_id": message_id}
 
     raw_email = RawEmail(
         id=uuid.uuid4(),
         connected_account_id=connected_account.id,
-        composio_message_id=data.get("message_id") or data.get("id"),
+        composio_message_id=message_id,
         sender=sender,
         subject=subject,
         body_text=body,
         raw_payload=data,
     )
     db.add(raw_email)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Lost the race with a near-simultaneous redelivery that inserted first
+        # (the unique index caught it). Treat as a duplicate, not an error.
+        await db.rollback()
+        return {"status": "duplicate", "message_id": message_id}
     await db.refresh(raw_email)
 
     if is_system_noise(sender, subject, body):

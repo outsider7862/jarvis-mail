@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Text, Boolean, Float, ForeignKey, JSON, DateTime, Index
+from sqlalchemy import String, Text, Boolean, Float, ForeignKey, JSON, DateTime, Index, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -58,6 +58,18 @@ class RawEmail(Base):
     """
 
     __tablename__ = "raw_emails"
+    __table_args__ = (
+        # Composio delivers GMAIL_NEW_GMAIL_MESSAGE at-least-once (and multiple
+        # active triggers on one mailbox each fire), so the same message id can
+        # arrive several times. One row per (account, message) keeps a single
+        # email from being classified — and shown — N times.
+        Index(
+            "uq_raw_emails_account_message",
+            "connected_account_id", "composio_message_id",
+            unique=True,
+            postgresql_where=text("composio_message_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     connected_account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("connected_accounts.id"), nullable=False)
