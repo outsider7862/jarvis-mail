@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -89,6 +90,26 @@ async def composio_webhook(
         )
         if dupe.first() is not None:
             return {"status": "duplicate", "message_id": message_id}
+
+    # Content-level dedupe. A duplicate *delivery* (e.g. a leftover trigger from a
+    # disconnect/reconnect) arrives as a fresh Gmail message — different message_id,
+    # same content — so the id check above can't catch it. Skip if an identical
+    # email (same account/sender/subject/body) landed in the last few minutes.
+    # The window keeps legitimately-recurring mail (same subject days apart) safe.
+    dupe_window_start = datetime.now(timezone.utc) - timedelta(minutes=10)
+    content_dupe = await db.execute(
+        select(RawEmail.id)
+        .where(
+            RawEmail.connected_account_id == connected_account.id,
+            RawEmail.sender == sender,
+            RawEmail.subject == subject,
+            RawEmail.body_text == body,
+            RawEmail.created_at >= dupe_window_start,
+        )
+        .limit(1)
+    )
+    if content_dupe.first() is not None:
+        return {"status": "duplicate_content"}
 
     raw_email = RawEmail(
         id=uuid.uuid4(),
