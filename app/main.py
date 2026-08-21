@@ -45,6 +45,8 @@ app.include_router(compose.router)
 app.include_router(calendar.router)
 
 
-@app.get("/health")
+# Accept HEAD as well as GET — uptime monitors (UptimeRobot et al.) probe with
+# HEAD by default, and a GET-only route answers those with 405.
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "ok"}
